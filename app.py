@@ -65,6 +65,7 @@ def init_db():
 
 class ProfileForm(FlaskForm):
     bio = TextAreaField('소개글', validators=[Length(max=500)])
+    current_password = PasswordField('현재 비밀번호', validators=[DataRequired()])
     new_password = PasswordField('새 비밀번호', validators=[Length(min=6)])
 
 # 기본 라우트
@@ -148,22 +149,36 @@ def profile():
 
     if form.validate_on_submit():
         bio = form.bio.data
+        current_pw = form.current_password.data
         new_pw = form.new_password.data
 
         if bio:
             cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
         if new_pw:
+            if not current_pw:
+                flash('비밀번호를 변경하려면 현재 비밀번호를 입력해야 합니다.')
+                return redirect(url_for('profile'))
+            
+            cursor.execute("SELECT password FROM user WHERE id = ?", (session['user_id'],))
+            db_pw = cursor.fetchone()
+
+            if not db_pw or db_pw['password'] != current_pw:
+                flash('현재 비밀번호가 올바르지 않습니다.')
+                return redirect(url_for('profile'))
+            
             cursor.execute("UPDATE user SET password = ? WHERE id = ?", (new_pw, session['user_id']))
+            flash('비밀번호가 성공적으로 변경되었습니다.')
 
         db.commit()
-        flash('프로필이 업데이트되었습니다.')
+        session.pop('user_id', None)
+        flash('비밀번호가 변경되었습니다. 다시 로그인 해주세요.')
         return redirect(url_for('profile'))
     
 
     cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
     current_user = cursor.fetchone()
-
     form.bio.data = current_user['bio'] or ''
+
     return render_template('profile.html', user=current_user, form=form)
 
 # 상품 등록

@@ -4,6 +4,11 @@
 <form method="post">
     {{ form.hidden_tag() }} 소개글: <br />
     {{ form.bio(rows=4, cols=50) }}<br />
+
+    <hr />
+    <h3>비밀번호 변경</h3>
+    현재 비밀번호: <br />
+    {{ form.current_password(size=32) }}<br />
     새 비밀번호: <br />
     {{ form.new_password(size=32) }}<br />
     <button type="submit">프로필 업데이트</button>
