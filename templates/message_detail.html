@@ -1,0 +1,17 @@
+{% extends "base.html" %} {% block title %}쪽지 상세보기{% endblock %} {% block content %}
+
+<h2>📩 쪽지 내용</h2>
+
+<p><strong>보낸 사람:</strong> {{ message.sender_name }}</p>
+<p><strong>받은 날짜:</strong> {{ message.created_at }}</p>
+
+<hr />
+<p>{{ message.content }}</p>
+
+<a href="{{ url_for('messages') }}">← 쪽지함으로 돌아가기</a>
+
+<a href="{{ url_for('send_message', receiver_id=message.sender_id) }}">
+    <button>✉️ 답장하기</button>
+</a>
+
+{% endblock %}

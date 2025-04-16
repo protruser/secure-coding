@@ -1,0 +1,19 @@
+{% extends "base.html" %} {% block title %}보낸 쪽지함{% endblock %} {% block content %}
+<h2>📤 보낸 쪽지함</h2>
+
+{% if messages %}
+<ul>
+    {% for m in messages %}
+    <li>
+        <strong>{{ m.receiver_name }}</strong> 님에게 보낸 쪽지 ({{ m.created_at }})
+        <br />
+        {{ m.content }}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>보낸 쪽지가 없습니다.</p>
+{% endif %}
+
+<a href="{{ url_for('profile') }}">← 프로필로 돌아가기</a>
+{% endblock %}

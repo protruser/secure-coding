@@ -2,6 +2,18 @@
 
 <h2>👤 프로필</h2>
 
+<div style="margin-bottom: 20px">
+    <a href="{{ url_for('messages') }}">
+        <button>📥 받은 쪽지함</button>
+    </a>
+    <a href="{{ url_for('sent_messages') }}">
+        <button>📤 보낸 쪽지함</button>
+    </a>
+    <a href="{{ url_for('compose_message') }}">
+        <button>✉️ 새 쪽지 쓰기</button>
+    </a>
+</div>
+
 <form method="post">
     {{ bio_form.hidden_tag() }}
     <input type="hidden" name="action_type" value="update_bio" />

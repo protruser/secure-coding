@@ -1,0 +1,10 @@
+{% extends "base.html" %} {% block title %}쪽지 보내기{% endblock %} {% block content %}
+<h2>📨 {{ receiver.username }} 님에게 쪽지 보내기</h2>
+
+<form method="post">
+    <textarea name="content" rows="5" cols="50" placeholder="쪽지 내용을 입력하세요..." required></textarea><br />
+    <button type="submit">보내기</button>
+</form>
+
+<a href="{{ url_for('dashboard') }}">← 대시보드로 돌아가기</a>
+{% endblock %}

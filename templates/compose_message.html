@@ -1,0 +1,16 @@
+{% extends "base.html" %} {% block title %}새 쪽지 보내기{% endblock %} {% block content %}
+
+<h2>✉️ 새 쪽지 보내기</h2>
+
+<form method="post">
+    받는 사람 (사용자명):<br />
+    <input type="text" name="receiver_username" required /><br /><br />
+
+    내용:<br />
+    <textarea name="content" rows="5" cols="50" placeholder="쪽지 내용을 입력하세요..." required></textarea><br />
+
+    <button type="submit">보내기</button>
+</form>
+
+<a href="{{ url_for('messages') }}">← 쪽지함으로 돌아가기</a>
+{% endblock %}

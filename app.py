@@ -432,6 +432,138 @@ def report():
     return render_template('report.html', form=form)
 
 
+@csrf.exempt
+@app.route('/message/send/<receiver_id>', methods=['GET', 'POST'])
+def send_message(receiver_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 쪽지를 받을 유저 정보 조회 (존재하는지 확인)
+    cursor.execute("SELECT * FROM user WHERE id = ?", (receiver_id,))
+    receiver = cursor.fetchone()
+    if not receiver:
+        flash('받는 사용자를 찾을 수 없습니다.')
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        content = request.form['content']
+        message_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO message (id, sender_id, receiver_id, content) VALUES (?, ?, ?, ?)",
+            (message_id, session['user_id'], receiver_id, content)
+        )
+        db.commit()
+        flash('쪽지를 보냈습니다.')
+        return redirect(url_for('messages'))
+
+    return render_template('send_message.html', receiver=receiver)
+
+
+@csrf.exempt
+@app.route('/messages')
+def messages():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 받은 쪽지 불러오기 (최근순)
+    cursor.execute("""
+        SELECT m.id, m.content, m.created_at, u.username AS sender_name
+        FROM message m
+        JOIN user u ON m.sender_id = u.id
+        WHERE m.receiver_id = ?
+        ORDER BY m.created_at DESC
+    """, (session['user_id'],))
+    messages = cursor.fetchall()
+
+    return render_template('messages.html', messages=messages)
+
+
+@csrf.exempt
+@app.route('/message/<message_id>')
+def view_message(message_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 내가 받은 쪽지만 열람 가능하게 제한
+    cursor.execute("""
+        SELECT m.*, u.username AS sender_name
+        FROM message m
+        JOIN user u ON m.sender_id = u.id
+        WHERE m.id = ? AND m.receiver_id = ?
+    """, (message_id, session['user_id']))
+    
+    message = cursor.fetchone()
+
+    if not message:
+        flash('쪽지를 찾을 수 없거나 접근 권한이 없습니다.')
+        return redirect(url_for('messages'))
+
+    return render_template('message_detail.html', message=message)
+
+
+@csrf.exempt
+@app.route('/message/compose', methods=['GET', 'POST'])
+def compose_message():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    if request.method == 'POST':
+        receiver_username = request.form['receiver_username']
+        content = request.form['content']
+
+        # 사용자명으로 상대 유저 ID 조회
+        cursor.execute("SELECT id FROM user WHERE username = ?", (receiver_username,))
+        receiver = cursor.fetchone()
+
+        if not receiver:
+            flash('해당 사용자명을 찾을 수 없습니다.')
+            return redirect(url_for('compose_message'))
+
+        message_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO message (id, sender_id, receiver_id, content) VALUES (?, ?, ?, ?)",
+            (message_id, session['user_id'], receiver['id'], content)
+        )
+        db.commit()
+        flash('쪽지를 보냈습니다.')
+        return redirect(url_for('messages'))
+
+    return render_template('compose_message.html')
+
+@csrf.exempt
+@app.route('/messages/sent')
+def sent_messages():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 보낸 쪽지 불러오기 (최근순)
+    cursor.execute("""
+        SELECT m.id, m.content, m.created_at, u.username AS receiver_name
+        FROM message m
+        JOIN user u ON m.receiver_id = u.id
+        WHERE m.sender_id = ?
+        ORDER BY m.created_at DESC
+    """, (session['user_id'],))
+    messages = cursor.fetchall()
+
+    return render_template('sent_messages.html', messages=messages)
+
+
 
 # 실시간 채팅: 클라이언트가 메시지를 보내면 전체 브로드캐스트
 @socketio.on('send_message')
