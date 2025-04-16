@@ -1,0 +1,13 @@
+{% extends "base.html" %} {% block title %}송금하기{% endblock %} {% block content %}
+
+<h2>💸 {{ receiver.username }} 님에게 송금</h2>
+<p>내 현재 잔액: {{ balance }}원</p>
+
+<form method="post">
+    송금할 금액: <input type="number" name="amount" min="1" required /> 원<br /><br />
+    <button type="submit">송금하기</button>
+</form>
+
+<a href="{{ url_for('profile') }}">← 프로필로 돌아가기</a>
+
+{% endblock %}

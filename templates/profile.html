@@ -23,6 +23,13 @@
 </form>
 
 <hr />
+<p>💰 현재 잔액: {{ user.balance }}원</p>
+
+<a href="{{ url_for('charge') }}">
+    <button>💳 잔액 충전</button>
+</a>
+
+<hr />
 
 <h3>📦 내가 등록한 상품</h3>
 {% if my_products %}

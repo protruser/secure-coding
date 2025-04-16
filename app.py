@@ -1,12 +1,13 @@
 import sqlite3
 import uuid
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g, send_from_directory, abort
 from flask_socketio import SocketIO, send
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, PasswordField
 from wtforms.validators import DataRequired, Length
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from wtforms import StringField
 from functools import wraps
@@ -20,6 +21,18 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 DATABASE = 'market.db'
 socketio = SocketIO(app)
 csrf = CSRFProtect(app)
+
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# 허용 파일 설정
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # 데이터베이스 연결 관리: 요청마다 연결 생성 후 사용, 종료 시 close
 def get_db():
@@ -71,6 +84,7 @@ def init_db():
         db.commit()
 
 
+# 관리자 - 데코레이터
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -154,6 +168,7 @@ def register():
     return render_template('register.html', form=form)
 
 
+# 사용자 프로필 보기
 @app.route('/user/<user_id>')
 def view_user(user_id):
     db = get_db()
@@ -165,6 +180,7 @@ def view_user(user_id):
         return redirect(url_for('dashboard'))
     return render_template('user_profile.html', user=user)
 
+# 관리자 페이지
 @app.route('/admin')
 @admin_required
 def admin_page():
@@ -207,7 +223,7 @@ def admin_page():
         product_reports=product_reports
     )
 
-# 관리자 - 상품 삭제제
+# 관리자 - 상품 삭제
 @csrf.exempt
 @app.route('/admin/delete_product/<product_id>', methods=['POST'])
 @admin_required
@@ -287,6 +303,7 @@ def dashboard():
     all_products = cursor.fetchall()
     return render_template('dashboard.html', products=all_products, user=current_user)
 
+# 상품 검색 - 제목
 @app.route('/search')
 def search_products():
     query = request.args.get('q')
@@ -296,8 +313,48 @@ def search_products():
     results = cursor.fetchall()
     return render_template('search_results.html', query=query, results=results)
 
+# 판매 완료
+@csrf.exempt
+@app.route('/product/mark_sold/<product_id>', methods=['POST'])
+def mark_product_sold(product_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 본인의 상품인지 확인
+    cursor.execute("SELECT * FROM product WHERE id = ? AND seller_id = ?", (product_id, session['user_id']))
+    product = cursor.fetchone()
+
+    if not product:
+        flash('해당 상품을 수정할 권한이 없습니다.')
+        return redirect(url_for('dashboard'))
+
+    # 판매 완료 처리
+    cursor.execute("UPDATE product SET is_sold = 1 WHERE id = ?", (product_id,))
+    db.commit()
+    flash('상품이 판매 완료 처리되었습니다.')
+    return redirect(url_for('view_product', product_id=product_id))
 
 
+# 파일 위치
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    # 세션 로그인 여부 확인
+    if 'user_id' not in session:
+        abort(403)  # 비로그인 접근 차단
+
+    # 또는 Referer 검사 예시 (선택)
+    referer = request.headers.get('Referer', '')
+    if not referer or not request.host in referer:
+        abort(403)  # 외부 URL 직접 접근 차단
+
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+
+# 사용자 프로필 수정
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
     if 'user_id' not in session:
@@ -368,17 +425,23 @@ def new_product():
 
     form = NewProductForm()
 
-    if form.validate_on_submit():
+    if request.method == 'POST' and form.validate_on_submit():
         title = form.title.data
         description = form.description.data
         price = form.price.data
+        image = request.files.get('image')
+
+        filename = None
+        if image and allowed_file(image.filename):  # 안전한 확장자만 허용
+            filename = f"{uuid.uuid4().hex}_{secure_filename(image.filename)}"
+            image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
         db = get_db()
         cursor = db.cursor()
         product_id = str(uuid.uuid4())
         cursor.execute(
-            "INSERT INTO product (id, title, description, price, seller_id) VALUES (?, ?, ?, ?, ?)",
-            (product_id, title, description, price, session['user_id'])
+            "INSERT INTO product (id, title, description, price, seller_id, image_filename) VALUES (?, ?, ?, ?, ?, ?)",
+            (product_id, title, description, price, session['user_id'], filename)
         )
         db.commit()
         flash('상품이 등록되었습니다.')
@@ -404,6 +467,7 @@ def view_product(product_id):
     return render_template('view_product.html', product=product, seller=seller)
 
 
+# 유저 신고
 @app.route('/report', methods=['GET', 'POST'])
 def report():
     if 'user_id' not in session:
@@ -432,6 +496,7 @@ def report():
     return render_template('report.html', form=form)
 
 
+# 쪽지 보내기 - 해당 유저에게 직접 보내기
 @csrf.exempt
 @app.route('/message/send/<receiver_id>', methods=['GET', 'POST'])
 def send_message(receiver_id):
@@ -462,6 +527,7 @@ def send_message(receiver_id):
     return render_template('send_message.html', receiver=receiver)
 
 
+# 받은 쪽지함
 @csrf.exempt
 @app.route('/messages')
 def messages():
@@ -484,6 +550,7 @@ def messages():
     return render_template('messages.html', messages=messages)
 
 
+# 쪽지 상세보기
 @csrf.exempt
 @app.route('/message/<message_id>')
 def view_message(message_id):
@@ -510,6 +577,7 @@ def view_message(message_id):
     return render_template('message_detail.html', message=message)
 
 
+# 쪽지 보내기 - 누구에게나 보낼 수 있음
 @csrf.exempt
 @app.route('/message/compose', methods=['GET', 'POST'])
 def compose_message():
@@ -542,6 +610,7 @@ def compose_message():
 
     return render_template('compose_message.html')
 
+# 보낸 쪽지 함
 @csrf.exempt
 @app.route('/messages/sent')
 def sent_messages():
@@ -562,6 +631,87 @@ def sent_messages():
     messages = cursor.fetchall()
 
     return render_template('sent_messages.html', messages=messages)
+
+
+# 잔액 충전
+@csrf.exempt
+@app.route('/charge', methods=['GET', 'POST'])
+def charge():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 사용자 정보 가져오기
+    cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
+    user = cursor.fetchone()
+
+    if request.method == 'POST':
+        try:
+            amount = int(request.form['amount'])
+        except ValueError:
+            flash('금액은 숫자로 입력해야 합니다.')
+            return redirect(url_for('charge'))
+
+        if amount <= 0:
+            flash('0원 이상만 충전할 수 있습니다.')
+            return redirect(url_for('charge'))
+
+        # balance 충전
+        cursor.execute("UPDATE user SET balance = balance + ? WHERE id = ?", (amount, session['user_id']))
+        db.commit()
+        flash(f'{amount}원이 충전되었습니다.')
+        return redirect(url_for('profile'))
+
+    return render_template('charge.html', balance=user['balance'])
+
+
+# 송금 기능
+@csrf.exempt
+@app.route('/transfer/<receiver_id>', methods=['GET', 'POST'])
+def transfer(receiver_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 받는 유저 정보 확인
+    cursor.execute("SELECT * FROM user WHERE id = ?", (receiver_id,))
+    receiver = cursor.fetchone()
+    if not receiver:
+        flash('해당 사용자를 찾을 수 없습니다.')
+        return redirect(url_for('dashboard'))
+
+    # 보내는 유저 정보
+    cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
+    sender = cursor.fetchone()
+
+    if request.method == 'POST':
+        try:
+            amount = int(request.form['amount'])
+        except ValueError:
+            flash('금액은 숫자여야 합니다.')
+            return redirect(url_for('transfer', receiver_id=receiver_id))
+
+        if amount <= 0:
+            flash('1원 이상만 송금할 수 있습니다.')
+            return redirect(url_for('transfer', receiver_id=receiver_id))
+
+        if sender['balance'] < amount:
+            flash('잔액이 부족합니다.')
+            return redirect(url_for('transfer', receiver_id=receiver_id))
+
+        # 송금 처리
+        cursor.execute("UPDATE user SET balance = balance - ? WHERE id = ?", (amount, sender['id']))
+        cursor.execute("UPDATE user SET balance = balance + ? WHERE id = ?", (amount, receiver['id']))
+        db.commit()
+
+        flash(f"{receiver['username']}님에게 {amount}원을 송금했습니다.")
+        return redirect(url_for('profile'))
+
+    return render_template('transfer.html', receiver=receiver, balance=sender['balance'])
 
 
 

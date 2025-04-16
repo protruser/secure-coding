@@ -1,10 +1,13 @@
 {% extends "base.html" %} {% block title %}새 상품 등록{% endblock %} {% block content %}
 <h2>상품 등록</h2>
-<form method="post">
+<form method="post" enctype="multipart/form-data">
     {{ form.hidden_tag() }} 제목: {{ form.title(size=50) }}<br />
     설명: <br />
     {{ form.description(rows=4, cols=50) }}<br />
     가격: {{ form.price(type="number") }}<br />
+
+    이미지: <input type="file" name="image" accept="image/*" /><br /><br />
+
     <button type="submit">등록하기</button>
 </form>
 {% endblock %}
