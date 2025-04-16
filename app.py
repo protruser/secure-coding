@@ -2,11 +2,16 @@ import sqlite3
 import uuid
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from flask_socketio import SocketIO, send
+from flask_wtf import FlaskForm
+from wtforms import TextAreaField, PasswordField
+from wtforms.validators import DataRequired, Length
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 DATABASE = 'market.db'
 socketio = SocketIO(app)
+csrf = CSRFProtect(app)
 
 # 데이터베이스 연결 관리: 요청마다 연결 생성 후 사용, 종료 시 close
 def get_db():
@@ -57,6 +62,11 @@ def init_db():
         """)
         db.commit()
 
+
+class ProfileForm(FlaskForm):
+    bio = TextAreaField('소개글', validators=[Length(max=500)])
+    new_password = PasswordField('새 비밀번호', validators=[Length(min=6)])
+
 # 기본 라우트
 @app.route('/')
 def index():
@@ -87,6 +97,7 @@ def register():
 
 # 로그인
 @app.route('/login', methods=['GET', 'POST'])
+@csrf.exempt
 def login():
     if request.method == 'POST':
         username = request.form['username']
@@ -133,15 +144,27 @@ def profile():
         return redirect(url_for('login'))
     db = get_db()
     cursor = db.cursor()
-    if request.method == 'POST':
-        bio = request.form.get('bio', '')
-        cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
+    form = ProfileForm()
+
+    if form.validate_on_submit():
+        bio = form.bio.data
+        new_pw = form.new_password.data
+
+        if bio:
+            cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
+        if new_pw:
+            cursor.execute("UPDATE user SET password = ? WHERE id = ?", (new_pw, session['user_id']))
+
         db.commit()
         flash('프로필이 업데이트되었습니다.')
         return redirect(url_for('profile'))
+    
+
     cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
     current_user = cursor.fetchone()
-    return render_template('profile.html', user=current_user)
+
+    form.bio.data = current_user['bio'] or ''
+    return render_template('profile.html', user=current_user, form=form)
 
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
