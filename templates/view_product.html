@@ -1,9 +1,10 @@
-{% extends "base.html" %} {% block title %}상품 상세보기{% endblock %} {% block content %}
+{% extends "base.html" %}
+{% block title %}상품 상세보기{% endblock %}
+{% block content %}
 <h2>{{ '[판매완료] ' if product.is_sold else '' }}{{ product.title }}</h2>
 <p>{{ product.description }}</p>
 <p>가격: {{ product.price }}</p>
 
-<!-- ✅ 이미지가 있다면 보여주기 -->
 {% if product.image_filename %}
 <img
     src="{{ url_for('uploaded_file', filename=product.image_filename) }}"
@@ -14,12 +15,22 @@
 
 <p>
     {% if seller %}
-    <a href="{{ url_for('view_user', user_id=seller.id) }}">{{ seller.username }}</a>
+        <a href="{{ url_for('view_user', user_id=seller.id) }}">{{ seller.username }}</a>
 
-    {% if seller.id != session['user_id'] %}
-    <a href="{{ url_for('transfer', receiver_id=seller.id) }}">
-        <button style="margin-top: 8px; font-size: 14px; padding: 6px 12px">💸 송금하기</button>
-    </a>
-    {% endif %} {% else %} 알 수 없음 {% endif %}
+        {% if seller.id != session['user_id'] %}
+            <a href="{{ url_for('transfer', receiver_id=seller.id) }}">
+                <button style="margin-top: 8px; font-size: 14px; padding: 6px 12px">💸 송금하기</button>
+            </a>
+        {% endif %}
+
+        {% if seller.id == session['user_id'] and not product.is_sold %}
+            <form method="post" action="{{ url_for('mark_product_sold', product_id=product.id) }}">
+                <button type="submit" style="margin-top: 10px;">✅ 판매 완료 처리</button>
+            </form>
+        {% endif %}
+
+    {% else %}
+        알 수 없음
+    {% endif %}
 </p>
 {% endblock %}
