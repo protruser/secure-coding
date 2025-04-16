@@ -30,3 +30,4 @@ ngrok http 5000
 
 ## Additional Function
 -  Password change logic
+-  User Inquiry
