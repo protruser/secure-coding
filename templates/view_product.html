@@ -1,8 +1,10 @@
-{% extends "base.html" %}
-{% block title %}상품 상세보기{% endblock %}
-{% block content %}
+{% extends "base.html" %} {% block title %}상품 상세보기{% endblock %} {% block content %}
 <h2>{{ product.title }}</h2>
 <p>{{ product.description }}</p>
 <p>가격: {{ product.price }}</p>
-<p>판매자: {{ seller.username if seller else '알 수 없음' }}</p>
+<p>
+    {% if seller %}
+    <a href="{{ url_for('view_user', user_id=seller.id) }}">{{ seller.username }}</a>
+    {% else %} 알 수 없음 {% endif %}
+</p>
 {% endblock %}

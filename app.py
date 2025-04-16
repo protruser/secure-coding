@@ -6,6 +6,7 @@ from flask_wtf import FlaskForm
 from wtforms import TextAreaField, PasswordField
 from wtforms.validators import DataRequired, Length
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -61,6 +62,18 @@ def init_db():
             )
         """)
         db.commit()
+
+@app.route('/user/<user_id>')
+def view_user(user_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash('해당 사용자를 찾을 수 없습니다.')
+        return redirect(url_for('dashboard'))
+    return render_template('user_profile.html', user=user)
+
 
 
 class ProfileForm(FlaskForm):

@@ -1,0 +1,5 @@
+{% extends "base.html" %} {% block title %}{{ user.username }}님의 프로필{% endblock %} {% block content %}
+<h2>{{ user.username }}님의 프로필</h2>
+<p><strong>소개글:</strong></p>
+<p>{{ user.bio or "등록된 소개글이 없습니다." }}</p>
+{% endblock %}
