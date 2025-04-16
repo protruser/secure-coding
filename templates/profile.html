@@ -1,16 +1,25 @@
 {% extends "base.html" %} {% block title %}프로필{% endblock %} {% block content %}
 <h2>프로필 관리</h2>
 <p>사용자명: {{ user.username }}</p>
-<form method="post">
-    {{ form.hidden_tag() }} 소개글: <br />
-    {{ form.bio(rows=4, cols=50) }}<br />
 
-    <hr />
+<form method="post">
+    {{ bio_form.hidden_tag() }}
+    <input type="hidden" name="action_type" value="update_bio" />
+    소개글: <br />
+    {{ bio_form.bio(rows=4, cols=50) }}<br />
+    <button type="submit">소개글 저장</button>
+</form>
+
+<hr />
+
+<form method="post">
+    {{ password_form.hidden_tag() }}
+    <input type="hidden" name="action_type" value="change_password" />
     <h3>비밀번호 변경</h3>
     현재 비밀번호: <br />
-    {{ form.current_password(size=32) }}<br />
+    {{ password_form.current_password(size=32) }}<br />
     새 비밀번호: <br />
-    {{ form.new_password(size=32) }}<br />
-    <button type="submit">프로필 업데이트</button>
+    {{ password_form.new_password(size=32) }}<br />
+    <button type="submit">비밀번호 변경</button>
 </form>
 {% endblock %}
