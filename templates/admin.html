@@ -1,0 +1,42 @@
+{% extends "base.html" %} {% block title %}관리자 페이지{% endblock %} {% block content %}
+<h2>👑 관리자 페이지</h2>
+
+<h3>회원 목록</h3>
+<ul>
+    {% for user in users %}
+    <li>
+        {{ user.username }} (ID: {{ user.id }}) {% if user_reports.get(user.id) %} - 🚨 신고 {{ user_reports[user.id]
+        }}건 {% endif %} {% if user.is_admin %} - 👑 관리자 {% endif %} {% if not user.is_suspended %} {% if
+        user.username != 'admin' %}
+        <form method="post" action="{{ url_for('suspend_user', user_id=user.id) }}" style="display: inline">
+            <button type="submit" onclick="return confirm('정말 휴면 처리하시겠습니까?')">🛑 휴면 처리</button>
+        </form>
+        {% else %} - 👑 관리자 계정 보호 {% endif %} {% else %} - 💤 휴면 계정 {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+
+<h3>📦 상품 목록</h3>
+<ul>
+    {% for p in products %}
+    <li>
+        {{ p.title }} - {{ p.price }} {% if product_reports.get(p.id) %} - 🚨 신고 {{ product_reports[p.id] }}건 {%
+        endif %}
+        <form method="post" action="{{ url_for('delete_product', product_id=p.id) }}" style="display: inline">
+            <button type="submit" onclick="return confirm('정말 삭제하시겠습니까?')">🗑️ 삭제</button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+
+<h3>📋 전체 신고 목록</h3>
+<ul>
+    {% for r in reports %}
+    <li>
+        ▶️ 신고자: {{ r.reporter_id }}<br />
+        ⛔ 대상: {{ r.target_id }}<br />
+        ✍️ 사유: {{ r.reason }}
+    </li>
+    {% endfor %}
+</ul>
+{% endblock %}

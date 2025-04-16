@@ -7,9 +7,16 @@ from wtforms import TextAreaField, PasswordField
 from wtforms.validators import DataRequired, Length
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
+from dotenv import load_dotenv
+from wtforms import StringField
+from functools import wraps
+import bleach
+import os
+
+load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 DATABASE = 'market.db'
 socketio = SocketIO(app)
 csrf = CSRFProtect(app)
@@ -63,16 +70,25 @@ def init_db():
         """)
         db.commit()
 
-@app.route('/user/<user_id>')
-def view_user(user_id):
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        flash('해당 사용자를 찾을 수 없습니다.')
-        return redirect(url_for('dashboard'))
-    return render_template('user_profile.html', user=user)
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('로그인이 필요합니다.')
+            return redirect(url_for('login'))
+
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
+        user = cursor.fetchone()
+
+        if not user or not user['is_admin']:
+            flash('관리자만 접근할 수 있습니다.')
+            return redirect(url_for('dashboard'))
+
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 
@@ -82,6 +98,23 @@ class BioForm(FlaskForm):
 class PasswordForm(FlaskForm):
     current_password = PasswordField('현재 비밀번호', validators=[DataRequired()])
     new_password = PasswordField('새 비밀번호', validators=[Length(min=6)])
+
+class RegisterForm(FlaskForm):
+    username = StringField('사용자명', validators=[DataRequired(), Length(min=3, max=20)])
+    password = PasswordField('비밀번호', validators=[DataRequired(), Length(min=6)])
+
+class LoginForm(FlaskForm):
+    username = StringField('사용자명', validators=[DataRequired(), Length(min=3)])
+    password = PasswordField('비밀번호', validators=[DataRequired(), Length(min=6)])
+
+class NewProductForm(FlaskForm):
+    title = StringField('제목', validators=[DataRequired(), Length(min=2, max=100)])
+    description = TextAreaField('설명', validators=[DataRequired(), Length(min=10, max=1000)])
+    price = StringField('가격', validators=[DataRequired(), Length(max=20)])
+
+class ReportForm(FlaskForm):
+    target_id = StringField('신고 대상 ID', validators=[DataRequired(), Length(min=1)])
+    reason = TextAreaField('신고 사유', validators=[DataRequired(), Length(min=5, max=1000)])
 
 
 # 기본 라우트
@@ -93,45 +126,143 @@ def index():
 
 # 회원가입
 @app.route('/register', methods=['GET', 'POST'])
-@csrf.exempt
 def register():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    form = RegisterForm()
+
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+
         db = get_db()
         cursor = db.cursor()
-        # 중복 사용자 체크
+
         cursor.execute("SELECT * FROM user WHERE username = ?", (username,))
         if cursor.fetchone() is not None:
             flash('이미 존재하는 사용자명입니다.')
             return redirect(url_for('register'))
+
+        hashed_pw = generate_password_hash(password)
         user_id = str(uuid.uuid4())
+
         cursor.execute("INSERT INTO user (id, username, password) VALUES (?, ?, ?)",
-                       (user_id, username, password))
+                       (user_id, username, hashed_pw))
         db.commit()
+
         flash('회원가입이 완료되었습니다. 로그인 해주세요.')
         return redirect(url_for('login'))
-    return render_template('register.html')
+
+    return render_template('register.html', form=form)
+
+
+@app.route('/user/<user_id>')
+def view_user(user_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash('해당 사용자를 찾을 수 없습니다.')
+        return redirect(url_for('dashboard'))
+    return render_template('user_profile.html', user=user)
+
+@app.route('/admin')
+@admin_required
+def admin_page():
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute("SELECT id, username, is_admin FROM user")
+    users = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM product")
+    products = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM report")
+    reports = cursor.fetchall()
+
+    # 유저 신고 수 집계
+    cursor.execute("""
+        SELECT target_id, COUNT(*) AS report_count
+        FROM report
+        WHERE target_id IN (SELECT id FROM user)
+        GROUP BY target_id
+    """)
+    user_reports = {row['target_id']: row['report_count'] for row in cursor.fetchall()}
+
+    # 상품 신고 수 집계
+    cursor.execute("""
+        SELECT target_id, COUNT(*) AS report_count
+        FROM report
+        WHERE target_id IN (SELECT id FROM product)
+        GROUP BY target_id
+    """)
+    product_reports = {row['target_id']: row['report_count'] for row in cursor.fetchall()}
+
+    return render_template(
+        'admin.html',
+        users=users,
+        products=products,
+        reports=reports,
+        user_reports=user_reports,
+        product_reports=product_reports
+    )
+
+# 관리자 - 상품 삭제제
+@csrf.exempt
+@app.route('/admin/delete_product/<product_id>', methods=['POST'])
+@admin_required
+def delete_product(product_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM product WHERE id = ?", (product_id,))
+    db.commit()
+    flash('상품이 삭제되었습니다.')
+    return redirect(url_for('admin_page'))
+
+
+# 관리자 - 유저 휴면 처리
+@app.route('/admin/suspend_user/<user_id>', methods=['POST'])
+@csrf.exempt
+@admin_required
+def suspend_user(user_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("UPDATE user SET is_suspended = 1 WHERE id = ?", (user_id,))
+    db.commit()
+    flash('해당 사용자가 휴면 처리되었습니다.')
+    return redirect(url_for('admin_page'))
+
+
 
 # 로그인
 @app.route('/login', methods=['GET', 'POST'])
-@csrf.exempt
 def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    form = LoginForm()
+
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+
         db = get_db()
         cursor = db.cursor()
-        cursor.execute("SELECT * FROM user WHERE username = ? AND password = ?", (username, password))
+        cursor.execute("SELECT * FROM user WHERE username = ?", (username,))
         user = cursor.fetchone()
-        if user:
+
+        if user and check_password_hash(user['password'], password):
+            if user['is_suspended']:
+                flash('이 계정은 휴면 상태입니다. 관리자에게 문의하세요.')
+                return redirect(url_for('login'))
+
             session['user_id'] = user['id']
             flash('로그인 성공!')
             return redirect(url_for('dashboard'))
-        else:
-            flash('아이디 또는 비밀번호가 올바르지 않습니다.')
-            return redirect(url_for('login'))
-    return render_template('login.html')
+
+        flash('아이디 또는 비밀번호가 올바르지 않습니다.')
+        return redirect(url_for('login'))
+
+    return render_template('login.html', form=form)
+
+
 
 # 로그아웃
 @app.route('/logout')
@@ -156,7 +287,17 @@ def dashboard():
     all_products = cursor.fetchall()
     return render_template('dashboard.html', products=all_products, user=current_user)
 
-# 프로필 페이지: bio 업데이트 가능
+@app.route('/search')
+def search_products():
+    query = request.args.get('q')
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM product WHERE title LIKE ?", (f'%{query}%',))
+    results = cursor.fetchall()
+    return render_template('search_results.html', query=query, results=results)
+
+
+
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
     if 'user_id' not in session:
@@ -170,12 +311,17 @@ def profile():
     bio_form = BioForm()
     password_form = PasswordForm()
 
+    
+    cursor.execute("SELECT * FROM product WHERE seller_id = ?", (session['user_id'],))
+    my_products = cursor.fetchall()
+
     if request.method == 'POST':
         action_type = request.form.get("action_type")
 
         if action_type == "update_bio" and bio_form.validate_on_submit():
-            bio = bio_form.bio.data
-            cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
+            raw_bio = bio_form.bio.data
+            safe_bio = bleach.clean(raw_bio, tags=[], attributes={}, strip=True)
+            cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (safe_bio, session['user_id']))
             db.commit()
             flash('소개글이 업데이트되었습니다.')
             return redirect(url_for('profile'))
@@ -191,32 +337,42 @@ def profile():
             cursor.execute("SELECT password FROM user WHERE id = ?", (session['user_id'],))
             db_pw = cursor.fetchone()
 
-            if not db_pw or db_pw['password'] != current_pw:
+            if not db_pw or not check_password_hash(db_pw['password'], current_pw):
                 flash('현재 비밀번호가 올바르지 않습니다.')
                 return redirect(url_for('profile'))
 
-            cursor.execute("UPDATE user SET password = ? WHERE id = ?", (new_pw, session['user_id']))
+            hashed_pw = generate_password_hash(new_pw)
+            cursor.execute("UPDATE user SET password = ? WHERE id = ?", (hashed_pw, session['user_id']))
             db.commit()
             session.pop('user_id', None)
             flash('비밀번호가 변경되었습니다. 다시 로그인 해주세요.')
             return redirect(url_for('login'))
 
-
     bio_form.bio.data = current_user['bio'] or ''
 
-    return render_template('profile.html', user=current_user, bio_form=bio_form, password_form=password_form)
+    return render_template(
+        'profile.html',
+        user=current_user,
+        bio_form=bio_form,
+        password_form=password_form,
+        my_products=my_products 
+    )
+
 
 
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
-@csrf.exempt
 def new_product():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    if request.method == 'POST':
-        title = request.form['title']
-        description = request.form['description']
-        price = request.form['price']
+
+    form = NewProductForm()
+
+    if form.validate_on_submit():
+        title = form.title.data
+        description = form.description.data
+        price = form.price.data
+
         db = get_db()
         cursor = db.cursor()
         product_id = str(uuid.uuid4())
@@ -227,7 +383,9 @@ def new_product():
         db.commit()
         flash('상품이 등록되었습니다.')
         return redirect(url_for('dashboard'))
-    return render_template('new_product.html')
+
+    return render_template('new_product.html', form=form)
+
 
 # 상품 상세보기
 @app.route('/product/<product_id>')
@@ -245,26 +403,35 @@ def view_product(product_id):
     seller = cursor.fetchone()
     return render_template('view_product.html', product=product, seller=seller)
 
-# 신고하기
+
 @app.route('/report', methods=['GET', 'POST'])
-@csrf.exempt
 def report():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    if request.method == 'POST':
-        target_id = request.form['target_id']
-        reason = request.form['reason']
+
+    form = ReportForm()
+
+    if form.validate_on_submit():
+        target_id = form.target_id.data
+        raw_reason = form.reason.data
+
+        # ✅ XSS 방어 필터링
+        safe_reason = bleach.clean(raw_reason, tags=[], attributes={}, strip=True)
+
         db = get_db()
         cursor = db.cursor()
         report_id = str(uuid.uuid4())
         cursor.execute(
             "INSERT INTO report (id, reporter_id, target_id, reason) VALUES (?, ?, ?, ?)",
-            (report_id, session['user_id'], target_id, reason)
+            (report_id, session['user_id'], target_id, safe_reason)
         )
         db.commit()
         flash('신고가 접수되었습니다.')
         return redirect(url_for('dashboard'))
-    return render_template('report.html')
+
+    return render_template('report.html', form=form)
+
+
 
 # 실시간 채팅: 클라이언트가 메시지를 보내면 전체 브로드캐스트
 @socketio.on('send_message')
