@@ -59,7 +59,10 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                bio TEXT
+                bio TEXT,
+                is_admin INTEGER DEFAULT 0,
+                is_suspended INTEGER DEFAULT 0,
+                balance INTEGER DEFAULT 0
             )
         """)
         # 상품 테이블 생성
@@ -69,7 +72,9 @@ def init_db():
                 title TEXT NOT NULL,
                 description TEXT NOT NULL,
                 price TEXT NOT NULL,
-                seller_id TEXT NOT NULL
+                seller_id TEXT NOT NULL,
+                image_filename TEXT,
+                is_sold INTEGER DEFAULT 0
             )
         """)
         # 신고 테이블 생성
@@ -81,6 +86,29 @@ def init_db():
                 reason TEXT NOT NULL
             )
         """)
+
+        # 쪽지 테이블 생성
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS message (
+                id TEXT PRIMARY KEY,
+                sender_id TEXT NOT NULL,
+                receiver_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        #  관리자 계정 자동 생성
+        cursor.execute("SELECT * FROM user WHERE username = 'admin'")
+        if not cursor.fetchone():
+            admin_id = str(uuid.uuid4())
+            hashed_pw = generate_password_hash("a@123@asd")
+            cursor.execute("""
+                INSERT INTO user (id, username, password, bio, is_admin, is_suspended, balance)
+                VALUES (?, ?, ?, '자동 생성된 관리자 계정입니다.', 1, 0, 0)
+            """, (admin_id, 'admin', hashed_pw))
+            print("관리자 계정(admin / a@123@asd) 자동 생성됨")
+
         db.commit()
 
 
