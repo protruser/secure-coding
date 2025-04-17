@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_socketio import SocketIO, send
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, PasswordField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Length, Regexp
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -98,16 +98,22 @@ def init_db():
             )
         """)
 
-        #  관리자 계정 자동 생성
-        cursor.execute("SELECT * FROM user WHERE username = 'admin'")
-        if not cursor.fetchone():
-            admin_id = str(uuid.uuid4())
-            hashed_pw = generate_password_hash("a@123@asd")
-            cursor.execute("""
-                INSERT INTO user (id, username, password, bio, is_admin, is_suspended, balance)
-                VALUES (?, ?, ?, '자동 생성된 관리자 계정입니다.', 1, 0, 0)
-            """, (admin_id, 'admin', hashed_pw))
-            print("관리자 계정(admin / a@123@asd) 자동 생성됨")
+        # 관리자 계정 자동 생성
+        admin_raw_pw = os.getenv("ADMIN_PASSWORD")
+        admin_id = os.getenv("ADMIN_ID")
+        if admin_raw_pw:
+            # 관리자 계정이 이미 있는지 확인
+            cursor.execute("SELECT * FROM user WHERE username = 'admin'")
+            existing_admin = cursor.fetchone()
+
+            if not existing_admin:
+                hashed_pw = generate_password_hash(admin_raw_pw)
+                cursor.execute("""
+                    INSERT INTO user (id, username, password, bio, is_admin, is_suspended, balance)
+                    VALUES (?, ?, ?, '자동 생성된 관리자 계정입니다.', 1, 0, 0)
+                """, (admin_id, 'admin', hashed_pw))
+                print("관리자 계정(admin) 자동 생성됨")
+
 
         db.commit()
 
@@ -142,8 +148,15 @@ class PasswordForm(FlaskForm):
     new_password = PasswordField('새 비밀번호', validators=[Length(min=6)])
 
 class RegisterForm(FlaskForm):
-    username = StringField('사용자명', validators=[DataRequired(), Length(min=3, max=20)])
-    password = PasswordField('비밀번호', validators=[DataRequired(), Length(min=6)])
+    username = StringField('사용자명', validators=[
+        DataRequired(), Length(min=3, max=20)
+    ])
+    password = PasswordField('비밀번호', validators=[
+        DataRequired(),
+        Length(min=8, message="비밀번호는 최소 8자 이상이어야 합니다."),
+        Regexp(r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).+$',
+               message="영문, 숫자, 특수문자를 각각 하나 이상 포함해야 합니다.")
+    ])
 
 class LoginForm(FlaskForm):
     username = StringField('사용자명', validators=[DataRequired(), Length(min=3)])
@@ -194,6 +207,7 @@ def register():
         return redirect(url_for('login'))
 
     return render_template('register.html', form=form)
+
 
 
 # 사용자 프로필 보기
@@ -317,7 +331,6 @@ def logout():
 
 # 대시보드: 사용자 정보와 전체 상품 리스트 표시
 @app.route('/dashboard')
-@csrf.exempt
 def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
@@ -480,7 +493,6 @@ def new_product():
 
 # 상품 상세보기
 @app.route('/product/<product_id>')
-@csrf.exempt
 def view_product(product_id):
     db = get_db()
     cursor = db.cursor()

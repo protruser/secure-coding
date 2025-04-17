@@ -1,4 +1,7 @@
-{% extends "base.html" %} {% block title %}회원가입{% endblock %} {% block content %}
+{% extends "base.html" %} {% block title %}회원가입{% endblock %} {% block content %} {% for error in
+form.password.errors %}
+<p style="color: red">{{ error }}</p>
+{% endfor %}
 <h2>회원가입</h2>
 <form method="post">
     {{ form.hidden_tag() }} 사용자명: {{ form.username(size=32) }}<br />
