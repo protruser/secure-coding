@@ -229,7 +229,7 @@ def admin_page():
     db = get_db()
     cursor = db.cursor()
 
-    cursor.execute("SELECT id, username, is_admin FROM user")
+    cursor.execute("SELECT id, username, is_admin, is_suspended FROM user")
     users = cursor.fetchall()
 
     cursor.execute("SELECT * FROM product")
@@ -395,7 +395,7 @@ def uploaded_file(filename):
 
 
 
-# 사용자 프로필 수정
+# 사용자 프로필 페이지 및 수정
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
     if 'user_id' not in session:
@@ -519,7 +519,6 @@ def report():
         target_id = form.target_id.data
         raw_reason = form.reason.data
 
-        # ✅ XSS 방어 필터링
         safe_reason = bleach.clean(raw_reason, tags=[], attributes={}, strip=True)
 
         db = get_db()

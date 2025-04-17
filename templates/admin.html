@@ -6,12 +6,12 @@
     {% for user in users %}
     <li>
         {{ user.username }} (ID: {{ user.id }}) {% if user_reports.get(user.id) %} - 🚨 신고 {{ user_reports[user.id]
-        }}건 {% endif %} {% if user.is_admin %} - 👑 관리자 {% endif %} {% if not user.is_suspended %} {% if
-        user.username != 'admin' %}
+        }}건 {% endif %} {% if user.is_admin %} - 👑 관리자 {% endif %} {% if user.username != 'admin' %} {% if
+        user.is_suspended|int == 0 %}
         <form method="post" action="{{ url_for('suspend_user', user_id=user.id) }}" style="display: inline">
             <button type="submit" onclick="return confirm('정말 휴면 처리하시겠습니까?')">🛑 휴면 처리</button>
         </form>
-        {% else %} - 👑 관리자 계정 보호 {% endif %} {% else %} - 💤 휴면 계정 {% endif %}
+        {% else %} - 💤 휴면처리됨 {% endif %} {% else %} - 👑 관리자 계정 보호 {% endif %}
     </li>
     {% endfor %}
 </ul>
